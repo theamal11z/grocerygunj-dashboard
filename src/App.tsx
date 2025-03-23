@@ -178,7 +178,7 @@ const AppRouter = () => {
   );
 };
 
-const App = () => {
+function App() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
@@ -196,6 +196,6 @@ const App = () => {
       </QueryClientProvider>
     </ErrorBoundary>
   );
-};
+}
 
 export default App;

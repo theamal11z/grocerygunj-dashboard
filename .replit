@@ -17,7 +17,7 @@ localPort = 8081
 externalPort = 8081
 
 [workflows]
-runButton = "Production"
+runButton = "Run"
 
 [[workflows.workflow]]
 name = "Production"
@@ -27,3 +27,12 @@ mode = "sequential"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "npm run build && npm run preview"
+
+[[workflows.workflow]]
+name = "Run"
+author = 40784934
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run dev -- --host 0.0.0.0"
