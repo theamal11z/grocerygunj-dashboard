@@ -1,3 +1,4 @@
+
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -9,6 +10,7 @@ import { DataProvider } from "@/lib/DataContext";
 import { AuthProvider } from "@/lib/AuthContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import { useAuth } from "@/lib/AuthContext";
 
 // Pages
 import Index from "@/pages/Index";
@@ -62,118 +64,119 @@ const AppRouter = () => {
     <>
       <ScrollToTop />
       <Routes>
-      {/* Public Route */}
-      <Route path="/login" element={<Login />} />
-      
-      {/* Development Route - only works in dev mode */}
-      <Route path="/create-admin" element={<CreateAdmin />} />
-      
-      {/* Protected Routes */}
-      <Route 
-        path="/" 
-        element={
-          <ProtectedRoute>
-            <DashboardLayout>
-              <Index />
-            </DashboardLayout>
-          </ProtectedRoute>
-        } 
-      />
-      
-      <Route 
-        path="/orders" 
-        element={
-          <ProtectedRoute>
-            <DashboardLayout>
-              <Orders />
-            </DashboardLayout>
-          </ProtectedRoute>
-        } 
-      />
-      
-      <Route 
-        path="/products" 
-        element={
-          <ProtectedRoute>
-            <DashboardLayout>
-              <Products />
-            </DashboardLayout>
-          </ProtectedRoute>
-        } 
-      />
-      
-      <Route 
-        path="/categories" 
-        element={
-          <ProtectedRoute>
-            <DashboardLayout>
-              <Categories />
-            </DashboardLayout>
-          </ProtectedRoute>
-        } 
-      />
-      
-      <Route 
-        path="/offers" 
-        element={
-          <ProtectedRoute>
-            <DashboardLayout>
-              <Offers />
-            </DashboardLayout>
-          </ProtectedRoute>
-        } 
-      />
-      
-      <Route 
-        path="/users" 
-        element={
-          <ProtectedRoute>
-            <DashboardLayout>
-              <Users />
-            </DashboardLayout>
-          </ProtectedRoute>
-        } 
-      />
-      
-      <Route 
-        path="/wishlists" 
-        element={
-          <ProtectedRoute>
-            <DashboardLayout>
-              <Wishlists />
-            </DashboardLayout>
-          </ProtectedRoute>
-        } 
-      />
-      
-      <Route 
-        path="/settings" 
-        element={
-          <ProtectedRoute>
-            <DashboardLayout>
-              <Settings />
-            </DashboardLayout>
-          </ProtectedRoute>
-        } 
-      />
-      
-      {/* Notifications Route */}
-      <Route 
-        path="/notifications" 
-        element={
-          <ProtectedRoute>
-            <DashboardLayout>
-              <Notifications />
-            </DashboardLayout>
-          </ProtectedRoute>
-        } 
-      />
-      
-      {/* 404 Route */}
-      <Route path="*" element={<NotFound />} />
-    </Routes>
-  </>
-);
+        {/* Public Route */}
+        <Route path="/login" element={<Login />} />
+        
+        {/* Development Route - only works in dev mode */}
+        <Route path="/create-admin" element={<CreateAdmin />} />
+        
+        {/* Protected Routes */}
+        <Route 
+          path="/" 
+          element={
+            <ProtectedRoute>
+              <DashboardLayout>
+                <Index />
+              </DashboardLayout>
+            </ProtectedRoute>
+          } 
+        />
+        
+        <Route 
+          path="/orders" 
+          element={
+            <ProtectedRoute>
+              <DashboardLayout>
+                <Orders />
+              </DashboardLayout>
+            </ProtectedRoute>
+          } 
+        />
+        
+        <Route 
+          path="/products" 
+          element={
+            <ProtectedRoute>
+              <DashboardLayout>
+                <Products />
+              </DashboardLayout>
+            </ProtectedRoute>
+          } 
+        />
+        
+        <Route 
+          path="/categories" 
+          element={
+            <ProtectedRoute>
+              <DashboardLayout>
+                <Categories />
+              </DashboardLayout>
+            </ProtectedRoute>
+          } 
+        />
+        
+        <Route 
+          path="/offers" 
+          element={
+            <ProtectedRoute>
+              <DashboardLayout>
+                <Offers />
+              </DashboardLayout>
+            </ProtectedRoute>
+          } 
+        />
+        
+        <Route 
+          path="/users" 
+          element={
+            <ProtectedRoute>
+              <DashboardLayout>
+                <Users />
+              </DashboardLayout>
+            </ProtectedRoute>
+          } 
+        />
+        
+        <Route 
+          path="/wishlists" 
+          element={
+            <ProtectedRoute>
+              <DashboardLayout>
+                <Wishlists />
+              </DashboardLayout>
+            </ProtectedRoute>
+          } 
+        />
+        
+        <Route 
+          path="/settings" 
+          element={
+            <ProtectedRoute>
+              <DashboardLayout>
+                <Settings />
+              </DashboardLayout>
+            </ProtectedRoute>
+          } 
+        />
+        
+        {/* Notifications Route */}
+        <Route 
+          path="/notifications" 
+          element={
+            <ProtectedRoute>
+              <DashboardLayout>
+                <Notifications />
+              </DashboardLayout>
+            </ProtectedRoute>
+          } 
+        />
+        
+        {/* 404 Route */}
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </>
+  );
+};
 
 const App = () => (
   <ErrorBoundary>
