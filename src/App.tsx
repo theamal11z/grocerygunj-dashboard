@@ -178,22 +178,24 @@ const AppRouter = () => {
   );
 };
 
-const App = () => (
-  <ErrorBoundary>
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <AuthProvider>
-          <DataProvider>
-            <TooltipProvider>
-              <Toaster />
-              <Sonner />
-              <AppRouter />
-            </TooltipProvider>
-          </DataProvider>
-        </AuthProvider>
-      </BrowserRouter>
-    </QueryClientProvider>
-  </ErrorBoundary>
-);
+const App = () => {
+  return (
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <AuthProvider>
+            <DataProvider>
+              <TooltipProvider>
+                <Toaster />
+                <Sonner />
+                <AppRouter />
+              </TooltipProvider>
+            </DataProvider>
+          </AuthProvider>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </ErrorBoundary>
+  );
+};
 
 export default App;
