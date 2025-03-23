@@ -25,7 +25,15 @@ import CreateAdmin from "@/pages/CreateAdmin";
 import Notifications from "@/pages/Notifications";
 
 // Create the query client
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 2,
+      staleTime: 10000,
+      refetchOnWindowFocus: false
+    }
+  }
+});
 
 // ScrollToTop component to scroll to top on route change
 const ScrollToTop = () => {
@@ -39,10 +47,21 @@ const ScrollToTop = () => {
 };
 
 // App Router with AuthProvider
-const AppRouter = () => (
-  <>
-    <ScrollToTop />
-    <Routes>
+const AppRouter = () => {
+  const { isLoading } = useAuth();
+  
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <ScrollToTop />
+      <Routes>
       {/* Public Route */}
       <Route path="/login" element={<Login />} />
       

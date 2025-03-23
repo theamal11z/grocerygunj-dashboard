@@ -65,31 +65,12 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
         console.log('Running admin status diagnostic check');
         const result = await debugAdminStatus();
         
-        // Special handling for theamal11z@rex.com user
-        if (session.user.email?.toLowerCase() === 'theamal11z@rex.com') {
-          console.log('Special user detected in ProtectedRoute, running additional checks');
-          
-          if (result?.adminCheck?.is_admin) {
-            console.log('Admin check shows user should be admin but isAdmin state is false');
-            console.log('Refreshing session to update state...');
-            await refreshSession();
-            
-            // If still not admin after refresh, try redirecting to force re-auth
-            setTimeout(() => {
-              if (!isAdmin) {
-                console.log('Still not admin after refresh, redirecting to login');
-                navigate('/login', { replace: true });
-              }
-            }, 1000);
-          } else {
-            console.log('Attempting to fix admin status for theamal11z@rex.com user');
-            
-            try {
-              // Directly update profile to ensure admin role
-              const { error } = await supabase
-                .from('profiles')
-                .update({ role: 'admin' })
-                .eq('id', session.user.id);
+        if (!isAdmin && result?.adminCheck?.is_admin) {
+          await refreshSession();
+          if (!isAdmin) {
+            navigate('/login', { replace: true });
+          }
+        }
                 
               if (error) {
                 console.error('Error fixing admin role:', error);
