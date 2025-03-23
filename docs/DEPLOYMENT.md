@@ -1,16 +1,23 @@
-# Deployment Guide for Modern Admin Suite
+# Deployment Guide
 
-This guide provides instructions for deploying the Modern Admin Suite to production environments.
+This application is a React/TypeScript admin dashboard built with:
+- Vite for building
+- ShadcnUI for components
+- Supabase for backend
+- TanStack Query for data fetching
 
-## Prerequisites
+## Build Commands
+```bash
+npm run build
+```
 
-- Node.js 18.x or later
-- npm 9.x or later
-- Supabase account with a project set up
-- Environment variables properly configured
+## Environment Variables
+Ensure these are set in production:
+- VITE_SUPABASE_URL
+- VITE_SUPABASE_ANON_KEY
+- VITE_API_URL
 
 ## Pre-Deployment Checklist
-
 Before deploying to production, ensure these important checks are completed:
 
 ### 1. Security Configuration
@@ -18,7 +25,7 @@ Before deploying to production, ensure these important checks are completed:
 - [ ] `FORCE_ADMIN_ACCESS` is set to `false` in `src/lib/AuthContext.tsx`
 - [ ] No hardcoded API keys or sensitive credentials in the codebase
 - [ ] Service role key is only used for admin operations
-- [ ] Environment variables are properly configured (see below)
+- [ ] Environment variables are properly configured (see above)
 
 ### 2. Database Migration
 
@@ -34,79 +41,10 @@ Before deploying to production, ensure these important checks are completed:
 - [ ] Verify authentication flows
 - [ ] Check admin privileges and access control
 
-## Environment Variables
-
-Create a `.env` file in the root of the project with these variables:
-
-```
-# Supabase Configuration
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
-
-# Authentication Configuration
-VITE_AUTH_REMEMBER_SESSION=true
-VITE_AUTH_SESSION_EXPIRY=604800 # 7 days in seconds
-
-# App Configuration
-VITE_APP_NAME="Modern Admin"
-```
-
-For admin operations (only required for servers that need to bypass RLS):
-
-```
-# IMPORTANT: Only set this in secure server environments, never in client-side code
-VITE_SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-```
-
-## Building for Production
-
-Run the following commands to build for production:
-
-```bash
-# Install dependencies
-npm install
-
-# Build for production
-npm run build
-```
-
-The built files will be in the `dist` directory.
-
 ## Deployment Options
 
-### Option 1: Static Site Hosting (Recommended)
+You can deploy the built files to any static site hosting service such as Netlify, Vercel, GitHub Pages, Firebase Hosting, or Cloudflare Pages.  For more advanced deployments, consider using Docker.  Refer to the original documentation for more detailed instructions.
 
-You can deploy the built files to any static site hosting service:
-
-- Netlify
-- Vercel
-- GitHub Pages
-- Firebase Hosting
-- Cloudflare Pages
-
-Example deployment to Netlify:
-
-```bash
-# Install Netlify CLI
-npm install -g netlify-cli
-
-# Deploy to Netlify
-netlify deploy --prod --dir=dist
-```
-
-### Option 2: Traditional Web Hosting
-
-Upload the contents of the `dist` directory to your web server.
-
-### Option 3: Docker Deployment
-
-```bash
-# Build Docker image
-docker build -t modern-admin-suite .
-
-# Run Docker container
-docker run -p 80:80 modern-admin-suite
-```
 
 ## Setting Up Admin Users
 
@@ -163,4 +101,4 @@ If the application cannot connect to the database:
 - Set up error monitoring with a service like Sentry
 - Configure performance monitoring
 - Regularly backup your Supabase database
-- Keep dependencies updated with `npm audit` and `npm update` 
+- Keep dependencies updated with `npm audit` and `npm update`
