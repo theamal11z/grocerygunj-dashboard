@@ -1,6 +1,4 @@
 import { Database } from '../lib/database.types';
-import { SettingsState } from '@/types/settings';
-import { supabase } from '@/lib/supabaseClient';
 
 export interface SettingsState {
   storeInfo: {
@@ -114,50 +112,108 @@ export async function saveSettingsDirect(settings: SettingsState, supabase: any)
     
     // Fall back to the regular method if RPC fails
     console.log('Falling back to standard update method');
-    return saveSettings(settings);
+    return saveSettings(settings, supabase);
   }
 }
 
 // Function to save settings to the database
-export async function saveSettings(settings: SettingsState) {
+export async function saveSettings(settings: SettingsState, supabase: any) {
   try {
-    // Make a copy of the settings
-    const settingsJSON = JSON.parse(JSON.stringify(settings));
-
+    // Make a copy of the settings to avoid modifying the original
+    const settingsCopy = JSON.parse(JSON.stringify(settings));
+    
+    // Convert the settings object to store in the database
+    // Supabase accepts direct JSON objects for JSONB columns
+    const settingsJSON = settingsCopy;
+    
+    console.log('Saving settings to database:', settingsCopy);
+    
     // Check if settings already exist
     const { data, error: fetchError } = await supabase
       .from('settings')
       .select('*')
       .limit(1);
-
+    
     if (fetchError) {
+      console.error('Error fetching settings during save operation:', fetchError);
       throw new Error(`Error fetching settings: ${fetchError.message}`);
     }
-
+    
     if (data && data.length > 0) {
       // Update existing settings
-      const { error } = await supabase
+      console.log(`Updating existing settings with ID: ${data[0].id}`);
+      
+      // First try with service role if available
+      if (typeof window !== 'undefined' && (window as any).adminSupabase) {
+        console.log('Using admin client for update');
+        const { data: updateData, error } = await (window as any).adminSupabase
+          .from('settings')
+          .update({ 
+            settings_data: settingsJSON,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', data[0].id)
+          .select();
+        
+        if (!error) {
+          console.log('Settings updated successfully with admin client:', updateData);
+          return { success: true, message: 'Settings updated successfully' };
+        } else {
+          console.warn('Admin client update failed, falling back to regular client', error);
+        }
+      }
+      
+      // Regular update with user permissions
+      const { data: updateData, error } = await supabase
         .from('settings')
         .update({ 
           settings_data: settingsJSON,
           updated_at: new Date().toISOString()
         })
-        .eq('id', data[0].id);
-
-      if (error) throw error;
-
+        .eq('id', data[0].id)
+        .select();
+      
+      if (error) {
+        console.error('Error updating settings:', error);
+        
+        // Try raw SQL as a last resort
+        try {
+          const { data: rawData, error: rawError } = await supabase.rpc('save_settings', {
+            settings_id: data[0].id,
+            settings_data: settingsJSON
+          });
+          
+          if (rawError) {
+            throw new Error(`Error in raw SQL update: ${rawError.message}`);
+          }
+          
+          console.log('Settings updated via raw SQL:', rawData);
+          return { success: true, message: 'Settings updated successfully via raw SQL' };
+        } catch (sqlError) {
+          console.error('SQL update failed:', sqlError);
+        throw new Error(`Error updating settings: ${error.message}`);
+        }
+      }
+      
+      console.log('Settings updated successfully:', updateData);
       return { success: true, message: 'Settings updated successfully' };
     } else {
       // Create new settings
-      const { error } = await supabase
+      console.log('No existing settings found. Creating new settings record.');
+      const { data: insertData, error } = await supabase
         .from('settings')
         .insert({ 
           settings_data: settingsJSON,
           created_at: new Date().toISOString()
-        });
-
-      if (error) throw error;
-
+        })
+        .select();
+      
+      if (error) {
+        console.error('Error creating settings:', error);
+        throw new Error(`Error creating settings: ${error.message}`);
+      }
+      
+      console.log('Settings created successfully:', insertData);
       return { success: true, message: 'Settings created successfully' };
     }
   } catch (error) {
@@ -170,19 +226,59 @@ export async function saveSettings(settings: SettingsState) {
 }
 
 // Function to load settings from the database
-export async function loadSettings() {
+export async function loadSettings(supabase: any): Promise<SettingsState> {
   try {
+    console.log('Fetching settings from database...');
+    
     const { data, error } = await supabase
       .from('settings')
-      .select('settings_data')
+      .select('*')
       .limit(1);
-
-    if (error) throw error;
-
-    return data?.[0]?.settings_data || {};
+    
+    if (error) {
+      console.error('Error fetching settings:', error);
+      throw new Error(`Error fetching settings: ${error.message}`);
+    }
+    
+    console.log('Settings data retrieved:', data);
+    
+    if (data && data.length > 0) {
+      if (!data[0].settings_data) {
+        console.warn('Settings record found but settings_data is null or empty');
+        return defaultSettings;
+      }
+      
+      try {
+        console.log('Processing settings data...');
+        
+        let settingsData = data[0].settings_data;
+        
+        // Handle different formats of settings_data that might be returned from Supabase
+        // Sometimes Supabase returns already parsed JSON objects and sometimes strings
+        if (typeof settingsData === 'string') {
+          console.log('Settings data is a string, parsing...');
+          settingsData = JSON.parse(settingsData);
+        }
+        
+        console.log('Successfully processed settings data:', settingsData);
+        
+        // Create a deeply merged object to ensure all required fields exist
+        const mergedSettings = deepMerge(defaultSettings, settingsData) as SettingsState;
+        console.log('Merged settings with defaults:', mergedSettings);
+        
+        return mergedSettings;
+      } catch (parseError) {
+        console.error('Error processing settings data:', parseError);
+        console.log('Raw settings data that failed to process:', data[0].settings_data);
+        return defaultSettings;
+      }
+    }
+    
+    console.log('No settings found in database, using defaults');
+    return defaultSettings;
   } catch (error) {
     console.error('Error loading settings:', error);
-    throw error;
+    return defaultSettings;
   }
 }
 
