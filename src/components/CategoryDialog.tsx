@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Dialog, 
   DialogContent, 
@@ -13,13 +13,15 @@ import { Label } from "@/components/ui/label";
 import { Database } from "@/lib/database.types";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
-import { XCircle, AlertCircle, Shield } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { adminSupabase } from "@/lib/supabase";
+import { XCircle } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 
 // Define types
 type Category = Database['public']['Tables']['categories']['Row'];
 type CategoryInsert = Database['public']['Tables']['categories']['Insert'];
+
+// Add Base64 encoding size limit (2MB recommended for database storage)
+const MAX_BASE64_SIZE = 2 * 1024 * 1024; // 2MB
 
 // Initial category state
 const initialCategoryState: Partial<Category> = {
@@ -42,11 +44,13 @@ const CategoryDialog: React.FC<CategoryDialogProps> = ({
 }) => {
   const [formData, setFormData] = useState<Partial<Category>>(initialCategoryState);
   const [loading, setLoading] = useState(false);
-  const [diagnosticMode, setDiagnosticMode] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState<string>('');
   const [imageError, setImageError] = useState<string>('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [uploading, setUploading] = useState<boolean>(false);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  // Add state for Base64 mode - default to true to avoid storage issues
+  const [useBase64, setUseBase64] = useState<boolean>(true);
 
   // Set form data when category changes (editing mode)
   useEffect(() => {
@@ -60,7 +64,7 @@ const CategoryDialog: React.FC<CategoryDialogProps> = ({
   // Validate image URL
   const isValidImageUrl = (url: string): boolean => {
     return url.trim() !== '' && 
-      (url.startsWith('http://') || url.startsWith('https://'));
+      (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:image/'));
   };
 
   const validateForm = () => {
@@ -97,7 +101,7 @@ const CategoryDialog: React.FC<CategoryDialogProps> = ({
     }
     
     if (!isValidImageUrl(imageUrl)) {
-      setImageError('Please enter a valid URL (starting with http:// or https://)');
+      setImageError('Please enter a valid URL (starting with http://, https://, or data:image/)');
       return;
     }
     
@@ -132,122 +136,131 @@ const CategoryDialog: React.FC<CategoryDialogProps> = ({
     }
   };
 
-  // Check Supabase connectivity
-  const checkSupabaseConnection = async () => {
-    setDiagnosticMode(true);
-    setConnectionStatus("Checking connection...");
-    try {
-      // Try to fetch one row from categories to check connectivity
-      const { data, error } = await supabase
-        .from('categories')
-        .select('id')
-        .limit(1)
-        .maybeSingle();
-      
-      if (error) {
-        if (error.message.toLowerCase().includes('network')) {
-          setConnectionStatus("⚠️ Network error - Unable to connect to Supabase");
-        } else if (error.message.includes('not found')) {
-          setConnectionStatus("⚠️ Table not found - The categories table may not exist");
-        } else if (error.message.includes('permission') || error.message.includes('403')) {
-          setConnectionStatus("⚠️ Permission denied - You may not have access to categories");
-        } else if (error.message.includes('JWT') || error.message.includes('auth')) {
-          setConnectionStatus("⚠️ Authentication error - Your session may have expired");
-        } else {
-          setConnectionStatus(`⚠️ Error connecting to Supabase: ${error.message}`);
-        }
-        console.error("Supabase connection check failed:", error);
-        return false;
-      }
-      
-      setConnectionStatus("✅ Successfully connected to Supabase");
-      console.log("Supabase connection check succeeded:", data);
-      return true;
-    } catch (error) {
-      setConnectionStatus(`⚠️ Unexpected error checking connection: ${error instanceof Error ? error.message : String(error)}`);
-      console.error("Unexpected error during connection check:", error);
-      return false;
+  // Handle file upload using Base64 encoding (no storage bucket needed)
+  const handleBase64Upload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    // Validate file type
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!allowedTypes.includes(file.type)) {
+      setImageError('Invalid file type. Please upload JPEG, PNG, WebP, or GIF images only.');
+      return;
     }
-  };
-
-  // Try to enable category admin policies if there's a permission error
-  const enableCategoryAdminPolicies = async () => {
-    try {
-      console.log("Attempting to enable category admin policies...");
-      // Call the stored procedure to enable admin policies
-      const { data, error } = await supabase.rpc('enable_category_admin_policies');
-      
-      if (error) {
-        console.error("Failed to enable category admin policies:", error);
-        return false;
-      }
-      
-      console.log("Category admin policies enabled:", data);
-      return true;
-    } catch (error) {
-      console.error("Error enabling category admin policies:", error);
-      return false;
-    }
-  };
-
-  // Attempt to save using admin client as fallback
-  const saveWithAdminClient = async () => {
-    if (!adminSupabase) {
-      console.error("Admin client is not available");
-      return false;
+    
+    // Validate file size (max 2MB for Base64 to avoid database issues)
+    if (file.size > MAX_BASE64_SIZE) {
+      setImageError(`File too large. Maximum size is ${MAX_BASE64_SIZE/1024/1024}MB for Base64 encoding.`);
+      return;
     }
     
     try {
-      const categoryData: CategoryInsert = {
-        name: formData.name?.trim() || '',
-        image_url: formData.image_url
-      };
+      setUploading(true);
+      setUploadProgress(10);
       
-      if (!categoryData.name) {
-        return false;
-      }
+      console.log('Starting Base64 encoding for:', file.name);
+      console.log('File size:', Math.round(file.size / 1024), 'KB');
       
-      console.log('Attempting to save with admin client bypass:', categoryData);
-      
-      if (category?.id) {
-        // Update existing category
-        const { error, data } = await adminSupabase
-          .from('categories')
-          .update(categoryData)
-          .eq('id', category.id)
-          .select();
-          
-        if (error) {
-          console.error("Admin client update failed:", error);
-          return false;
-        }
+      // Read the file as Base64
+      const base64Image = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
         
-        console.log('Category updated successfully with admin client:', data);
-        toast.success('Category updated successfully (admin bypass)');
-      } else {
-        // Create new category
-        const { error, data } = await adminSupabase
-          .from('categories')
-          .insert([categoryData])
-          .select();
-          
-        if (error) {
-          console.error("Admin client insert failed:", error);
-          return false;
-        }
+        reader.onload = (e) => {
+          if (e.target?.result) {
+            // Result contains the Base64 data URL
+            resolve(e.target.result as string);
+          } else {
+            reject(new Error('Failed to read file'));
+          }
+        };
         
-        console.log('Category added successfully with admin client:', data);
-        toast.success('Category added successfully (admin bypass)');
-      }
+        reader.onerror = () => {
+          reject(new Error('Error reading file'));
+        };
+        
+        // Read file as data URL (includes Base64 data)
+        reader.readAsDataURL(file);
+      });
       
-      onSave();
-      onOpenChange(false);
-      return true;
+      setUploadProgress(90);
+      console.log('Base64 encoding complete. Length:', base64Image.length);
+      
+      // Update form data with the new Base64 image
+      setFormData(prev => ({
+        ...prev,
+        image_url: base64Image
+      }));
+      
+      setUploadProgress(100);
+      toast.success('Image encoded and added successfully');
+      
     } catch (error) {
-      console.error('Error saving with admin client:', error);
-      return false;
+      console.error('Error processing image:', error);
+      let errorMessage = 'Failed to process image.';
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
+      setImageError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
+      // Reset file input
+      event.target.value = '';
     }
-  };
+  }, []);
+
+  // Handle file upload via storage bucket
+  const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    // Validate file type
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!allowedTypes.includes(file.type)) {
+      setImageError('Invalid file type. Please upload JPEG, PNG, WebP, or GIF images only.');
+      return;
+    }
+    
+    // Validate file size (max 5MB)
+    const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+    if (file.size > MAX_SIZE) {
+      setImageError('File too large. Maximum size is 5MB.');
+      return;
+    }
+    
+    try {
+      setUploading(true);
+      setUploadProgress(10);
+      
+      // Implement your existing bucket storage upload logic here
+      // This is just a placeholder for now
+      toast.error('Storage bucket upload not implemented. Use Base64 mode instead.');
+      setImageError('Storage bucket upload not implemented');
+      
+    } catch (error) {
+      console.error('Upload error:', error);
+      setImageError('Failed to upload image to storage bucket');
+      toast.error('Upload failed');
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
+      event.target.value = '';
+    }
+  }, []);
+
+  // Combined file input handler
+  const handleFileInputChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    setImageError(''); // Clear any previous errors
+    
+    if (useBase64) {
+      handleBase64Upload(event);
+    } else {
+      handleFileUpload(event);
+    }
+  }, [useBase64, handleBase64Upload, handleFileUpload]);
 
   const handleSave = async () => {
     if (!validateForm()) return;
@@ -268,58 +281,35 @@ const CategoryDialog: React.FC<CategoryDialogProps> = ({
       console.log('Saving category data:', categoryData);
       
       let result;
-      let retryCount = 0;
-      let lastError = null;
       
-      // Try saving up to 2 times, with an attempt to fix permissions in between
-      while (retryCount < 2) {
-        try {
-          if (category?.id) {
-            // Update existing category
-            result = await supabase
-              .from('categories')
-              .update(categoryData)
-              .eq('id', category.id)
-              .select();
-          } else {
-            // Create new category
-            result = await supabase
-              .from('categories')
-              .insert([categoryData])
-              .select();
-          }
-          
-          if (result.error) {
-            lastError = result.error;
-            if (result.error.message.includes('permission') || result.error.message.includes('403')) {
-              console.log("Permission error detected, attempting to fix policies...");
-              await enableCategoryAdminPolicies();
-              // Wait a moment for policies to take effect
-              await new Promise(resolve => setTimeout(resolve, 500));
-              retryCount++;
-              continue;
-            }
-            throw result.error;
-          }
-          
-          if (!result.data || result.data.length === 0) {
-            throw new Error('Failed to save category, no data returned');
-          }
-          
-          // Success - break out of the retry loop
-          console.log(category?.id ? 'Category updated successfully:' : 'Category added successfully:', result.data);
-          toast.success(category?.id ? 'Category updated successfully' : 'Category added successfully');
-          onSave();
-          onOpenChange(false);
-          return;
-        } catch (innerError) {
-          lastError = innerError;
-          throw innerError;
-        }
+      if (category?.id) {
+        // Update existing category
+        result = await supabase
+          .from('categories')
+          .update(categoryData)
+          .eq('id', category.id)
+          .select();
+      } else {
+        // Create new category
+        result = await supabase
+          .from('categories')
+          .insert([categoryData])
+          .select();
       }
       
-      // If we get here, all retries failed
-      throw lastError || new Error('Failed to save category after retries');
+      if (result.error) {
+        throw result.error;
+      }
+      
+      if (!result.data || result.data.length === 0) {
+        throw new Error('Failed to save category, no data returned');
+      }
+      
+      // Success
+      console.log(category?.id ? 'Category updated successfully:' : 'Category added successfully:', result.data);
+      toast.success(category?.id ? 'Category updated successfully' : 'Category added successfully');
+      onSave();
+      onOpenChange(false);
       
     } catch (error) {
       console.error('Error saving category:', error);
@@ -334,11 +324,6 @@ const CategoryDialog: React.FC<CategoryDialogProps> = ({
           errorMessage = 'A category with this name already exists';
         } else if (errorMessage.includes('permission') || errorMessage.includes('403')) {
           errorMessage = 'Permission error. You may not have rights to save categories.';
-          // Try to fix permissions
-          const fixed = await enableCategoryAdminPolicies();
-          if (fixed) {
-            errorMessage += ' Permissions updated - please try saving again.';
-          }
         } else if (errorMessage.toLowerCase().includes('network')) {
           errorMessage = 'Network error. Check your internet connection.';
         } else if (errorMessage.includes('not found')) {
@@ -353,9 +338,6 @@ const CategoryDialog: React.FC<CategoryDialogProps> = ({
       toast.error(errorMessage, {
         description: 'Check browser console for more details. You may need to refresh the page.'
       });
-      
-      // Automatically check connection on error
-      checkSupabaseConnection();
     } finally {
       setLoading(false);
     }
@@ -363,150 +345,113 @@ const CategoryDialog: React.FC<CategoryDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[90vw] sm:max-w-[500px] h-auto max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>{category?.id ? 'Edit Category' : 'Add New Category'}</DialogTitle>
+          <DialogTitle>{category ? 'Edit Category' : 'Add Category'}</DialogTitle>
         </DialogHeader>
         
-        <div className="grid gap-4 py-2 pr-1">
-          {/* Category Name */}
-          <div className="space-y-2">
-            <Label htmlFor="name">Category Name</Label>
+        <div className="grid gap-4 py-4">
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="name" className="text-right">
+              Name
+            </Label>
             <Input
               id="name"
               value={formData.name || ''}
               onChange={(e) => handleChange('name', e.target.value)}
-              className={errors.name ? 'border-destructive' : ''}
-              placeholder="Enter category name..."
+              className="col-span-3"
+              placeholder="Category name"
             />
-            {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
+            {errors.name && <p className="text-destructive text-sm col-start-2 col-span-3">{errors.name}</p>}
           </div>
           
-          {/* Image URL */}
-          <div className="space-y-3">
-            <Label>Category Image</Label>
-            
-            {/* Image URL Input */}
-            <div className="flex flex-col sm:flex-row gap-2">
-              <Input
-                value={imageUrl}
-                onChange={handleImageUrlChange}
-                onKeyDown={handleImageUrlKeyDown}
-                placeholder="Image URL (https://...)"
-                className={`flex-1 ${imageError ? 'border-destructive' : ''}`}
-              />
-              <Button 
-                type="button" 
-                variant="outline" 
-                onClick={handleUpdateImageUrl}
-                className="sm:flex-shrink-0"
-              >
-                Update Image
-              </Button>
-            </div>
-            {imageError && <p className="text-xs text-destructive mt-1">{imageError}</p>}
-            <p className="text-xs text-muted-foreground">
-              Add an image URL from online sources. You can press Enter to quickly update.
-            </p>
-            
-            {/* Image Preview */}
-            {formData.image_url ? (
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <Label className="text-sm">Category Image</Label>
+          <div className="grid grid-cols-4 items-start gap-4">
+            <Label htmlFor="image" className="text-right pt-2">
+              Image
+            </Label>
+            <div className="col-span-3 space-y-2">
+              {/* Image storage method toggle */}
+              <div className="flex items-center space-x-2 mb-2">
+                <Checkbox
+                  id="use-base64"
+                  checked={useBase64}
+                  onCheckedChange={(checked) => setUseBase64(checked as boolean)}
+                />
+                <Label htmlFor="use-base64" className="text-xs cursor-pointer">
+                  Use Base64 encoding (store in database)
+                </Label>
+              </div>
+              
+              <div className="flex gap-2">
+                <Input
+                  id="image-url"
+                  value={imageUrl}
+                  onChange={handleImageUrlChange}
+                  onKeyDown={handleImageUrlKeyDown}
+                  placeholder="Image URL"
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleUpdateImageUrl}
+                >
+                  Update
+                </Button>
+              </div>
+              
+              {/* File upload input */}
+              <div className="flex gap-2 items-center">
+                <Input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileInputChange}
+                  className="flex-1"
+                />
+              </div>
+              
+              {uploading && (
+                <div className="w-full bg-gray-200 rounded-full h-2.5">
+                  <div 
+                    className="bg-blue-600 h-2.5 rounded-full" 
+                    style={{ width: `${uploadProgress}%` }}
+                  ></div>
                 </div>
-                <div className="relative group w-full max-w-[300px] mx-auto">
-                  <img
-                    src={formData.image_url}
-                    alt={`Category image`}
-                    className="h-40 w-full object-cover rounded-md"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = "https://placehold.co/300x200?text=Error";
-                    }}
+              )}
+              
+              {imageError && <p className="text-destructive text-sm">{imageError}</p>}
+              
+              {formData.image_url && (
+                <div className="relative border rounded p-1 mt-2">
+                  <img 
+                    src={formData.image_url as string} 
+                    alt="Category image"
+                    className="w-full h-32 object-contain"
+                    onError={() => setImageError('Invalid image URL')}
                   />
                   <Button
                     type="button"
                     variant="destructive"
                     size="icon"
-                    className="absolute top-2 right-2 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="absolute top-1 right-1 h-6 w-6"
                     onClick={handleRemoveImage}
                   >
                     <XCircle className="h-4 w-4" />
                   </Button>
                 </div>
-              </div>
-            ) : (
-              <div className="border rounded-md p-3 text-center text-muted-foreground">
-                <p className="text-sm">No image added yet</p>
-                <p className="text-xs mt-1">Add an image by entering a URL above</p>
-              </div>
-            )}
+              )}
+              
+              <p className="text-xs text-muted-foreground">
+                {useBase64
+                  ? 'Base64 mode: Image will be stored directly in the database'
+                  : 'URL mode: Image will be referenced from an external source'}
+              </p>
+            </div>
           </div>
-          
-          {/* Diagnostic Information */}
-          {diagnosticMode && (
-            <Alert className={connectionStatus?.includes('✅') ? 'bg-green-50' : 'bg-amber-50'}>
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription className="text-sm">
-                <div className="font-medium">Supabase Diagnostic</div>
-                <div>{connectionStatus}</div>
-                {!connectionStatus?.includes('✅') && (
-                  <div className="flex gap-2 mt-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={checkSupabaseConnection}
-                      className="flex-1"
-                    >
-                      Retry Connection Test
-                    </Button>
-                    
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={enableCategoryAdminPolicies}
-                      className="flex-1"
-                    >
-                      Fix RLS Policies
-                    </Button>
-                  </div>
-                )}
-              </AlertDescription>
-            </Alert>
-          )}
-          
-          {/* Show admin bypass button if in diagnostic mode and adminSupabase is available */}
-          {diagnosticMode && adminSupabase && !connectionStatus?.includes('✅') && (
-            <Alert className="bg-red-50 border-red-200 my-2">
-              <Shield className="h-4 w-4 text-red-500" />
-              <AlertDescription className="text-sm flex flex-col gap-2">
-                <div>
-                  <span className="font-medium">Admin Override Available</span>
-                  <p className="text-xs">You can bypass RLS policies using admin credentials</p>
-                </div>
-                <Button 
-                  variant="destructive" 
-                  size="sm"
-                  onClick={saveWithAdminClient}
-                  className="w-full"
-                >
-                  Save With Admin Override
-                </Button>
-              </AlertDescription>
-            </Alert>
-          )}
         </div>
         
         <DialogFooter className="sm:justify-end gap-2 pt-2">
-          <Button 
-            type="button" 
-            variant="outline" 
-            size="sm" 
-            className="mr-auto"
-            onClick={checkSupabaseConnection}
-          >
-            Test Connection
-          </Button>
           <DialogClose asChild>
             <Button type="button" variant="outline" size="sm" className="sm:size-default">
               Cancel
