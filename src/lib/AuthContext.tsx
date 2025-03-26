@@ -144,17 +144,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       // Special handling for theamal11z@rex.com - ensure admin
       if (user.email === 'theamal11z@rex.com' && !hasAdminRole) {
-        console.log('Special user theamal11z@rex.com detected, ensuring admin role...');
-        const { error: updateError } = await supabase
-          .from('profiles')
-          .update({ role: 'admin' })
-          .eq('id', user.id);
-          
-        if (updateError) {
-          console.error('Error updating special user role:', updateError);
+        console.log('Special user detected, checking admin authorization via secure method...');
+        // Instead of hardcoding email, use a secure RPC function to check if user should be admin
+        const { data: adminAuthCheck, error: adminAuthError } = await supabase.rpc(
+          'verify_admin_authorization',
+          { email: user.email }
+        );
+        
+        if (!adminAuthError && adminAuthCheck && adminAuthCheck.is_authorized) {
+          console.log('User authorized as admin via secure verification');
+          const { error: updateError } = await supabase
+            .from('profiles')
+            .update({ role: 'admin' })
+            .eq('id', user.id);
+            
+          if (updateError) {
+            console.error('Error updating special user role:', updateError);
+          } else {
+            console.log('Updated user to admin role based on secure verification');
+            setIsAdmin(true);
+          }
         } else {
-          console.log('Updated special user to admin role');
-          setIsAdmin(true);
+          console.log('User not authorized for special admin access');
         }
       }
     } catch (error) {
@@ -246,6 +257,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (error) {
         console.error('Error refreshing session:', error);
+        // Try to recover by checking if we still have a valid session
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+        if (!sessionError && sessionData?.session) {
+          console.log('Found existing valid session despite refresh error');
+          setSession(sessionData.session);
+          setUser(sessionData.user);
+          setLastRefreshTime(now);
+          return true;
+        }
         return false;
       }
       

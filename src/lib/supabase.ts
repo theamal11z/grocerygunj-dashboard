@@ -5,11 +5,25 @@ import type { Database } from './database.types';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// Ensure required environment variables are present
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('Missing required environment variables for Supabase connection');
-  // We don't throw an error here to allow the app to load,
-  // but authentication and data operations will fail
+// Ensure required environment variables are present and provide better error messages
+const missingEnvVars = [];
+if (!supabaseUrl) missingEnvVars.push('VITE_SUPABASE_URL');
+if (!supabaseAnonKey) missingEnvVars.push('VITE_SUPABASE_ANON_KEY');
+
+if (missingEnvVars.length > 0) {
+  const errorMessage = `Missing required environment variables: ${missingEnvVars.join(', ')}`;
+  console.error(errorMessage);
+  
+  // In development, show a more prominent error
+  if (import.meta.env.DEV) {
+    // This will show in the browser console with formatting
+    console.error('%c⚠️ Supabase Configuration Error ⚠️', 'background: #ffee00; color: #111; font-size: 14px; font-weight: bold; padding: 4px 8px;');
+    console.error('%cMissing environment variables will cause authentication and data operations to fail.', 'font-size: 12px;');
+    console.error('%cMake sure your .env file contains the following variables:', 'font-size: 12px;');
+    missingEnvVars.forEach(varName => {
+      console.error(`%c - ${varName}=your_value_here`, 'font-size: 12px; color: #dc2626;');
+    });
+  }
 }
 
 // Debug flag - only enabled in development
@@ -17,7 +31,7 @@ const DEBUG = import.meta.env.DEV || false;
 
 if (DEBUG) {
   console.log('Supabase Configuration:');
-  console.log('URL:', supabaseUrl ? supabaseUrl.substring(0, 8) + '...' : 'Missing');
+  console.log('URL:', supabaseUrl ? `${supabaseUrl.substring(0, 8)}...` : 'Missing');
   console.log('Key:', supabaseAnonKey ? 'Present (masked)' : 'Missing');
 }
 
@@ -25,6 +39,7 @@ if (DEBUG) {
 export const SESSION_DURATION_SECONDS = 1 * 24 * 60 * 60;
 
 // Create client with standard session settings
+// Use empty strings as fallbacks to prevent runtime errors, but service won't work correctly
 export const supabase = createClient<Database>(
   supabaseUrl || '',
   supabaseAnonKey || '',

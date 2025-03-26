@@ -107,9 +107,38 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const getReadNotificationIds = (): string[] => {
     try {
       const storedIds = localStorage.getItem(READ_NOTIFICATIONS_KEY);
-      return storedIds ? JSON.parse(storedIds) : [];
+      
+      if (!storedIds) return [];
+      
+      // Attempt to parse and validate the stored data
+      const parsedIds = JSON.parse(storedIds);
+      
+      // Ensure the parsed data is an array of strings
+      if (!Array.isArray(parsedIds)) {
+        console.error('Invalid format for read notifications in localStorage, resetting');
+        localStorage.removeItem(READ_NOTIFICATIONS_KEY);
+        return [];
+      }
+      
+      // Filter out any non-string or invalid UUIDs
+      const validIds = parsedIds.filter(id => {
+        if (typeof id !== 'string') return false;
+        // Basic UUID format validation (not comprehensive but catches most issues)
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        return uuidRegex.test(id);
+      });
+      
+      // If we filtered out items, update the storage with clean data
+      if (validIds.length !== parsedIds.length) {
+        localStorage.setItem(READ_NOTIFICATIONS_KEY, JSON.stringify(validIds));
+        console.warn('Sanitized read notifications in localStorage');
+      }
+      
+      return validIds;
     } catch (error) {
       console.error('Error reading from localStorage:', error);
+      // Clear potentially corrupted data
+      localStorage.removeItem(READ_NOTIFICATIONS_KEY);
       return [];
     }
   };
@@ -117,10 +146,25 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Function to save read notification IDs to localStorage
   const saveReadNotificationId = (notificationId: string): void => {
     try {
+      // Validate the notification ID format before saving
+      if (typeof notificationId !== 'string' || notificationId.trim() === '') {
+        console.error('Invalid notification ID, not saving to localStorage');
+        return;
+      }
+      
+      // Basic UUID validation
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(notificationId)) {
+        console.error('Notification ID does not match UUID format, not saving');
+        return;
+      }
+      
       const currentIds = getReadNotificationIds();
       if (!currentIds.includes(notificationId)) {
         const updatedIds = [...currentIds, notificationId];
-        localStorage.setItem(READ_NOTIFICATIONS_KEY, JSON.stringify(updatedIds));
+        // Limit the number of stored IDs to prevent localStorage overflow
+        const limitedIds = updatedIds.slice(-500); // Keep only the most recent 500 IDs
+        localStorage.setItem(READ_NOTIFICATIONS_KEY, JSON.stringify(limitedIds));
         console.log(`Saved notification ${notificationId} as read in localStorage`);
       }
     } catch (error) {
@@ -209,9 +253,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       if (productsError) {
         console.error('Products error:', productsError);
-        throw new Error(`Products error: ${productsError.message}`);
+        setError(`Error fetching products: ${productsError.message}`);
+        // Continue with other data fetching even if products fail
+      } else {
+        setProducts(productsData || []);
       }
-      setProducts(productsData || []);
       
       // Fetch categories
       console.log('Fetching categories...');
@@ -239,6 +285,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const { data: fixResult, error: fixError } = await client.rpc('enable_category_admin_policies');
             if (fixError) {
               console.error('Failed to fix category policies:', fixError);
+              setError(`Error with categories: ${categoriesError.message}. Failed to fix: ${fixError.message}`);
             } else {
               console.log('Category policies fixed:', fixResult);
               // Retry fetching categories
@@ -248,21 +295,23 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 .order('name', { ascending: true });
               
               if (retryError) {
-                console.error('Still failed to fetch categories after fixing policies:', retryError);
-                throw new Error(`Categories error: ${retryError.message}`);
+                console.error('Categories retry error:', retryError);
+                setError(`Error fetching categories after policy fix: ${retryError.message}`);
               } else {
-                console.log('Successfully fetched categories after fixing policies:', retryData?.length || 0);
+                console.log('Categories retry successful:', retryData ? `${retryData.length} items` : 'No data');
                 setCategories(retryData || []);
               }
             }
           } catch (fixAttemptError) {
-            console.error('Error attempting to fix category policies:', fixAttemptError);
-            throw new Error(`Categories error: ${categoriesError.message}`);
+            console.error('Exception trying to fix policies:', fixAttemptError);
+            setError(`Error with categories: ${categoriesError.message}. Fix attempt failed.`);
           }
         } else {
-          throw new Error(`Categories error: ${categoriesError.message}`);
+          // Not a permission error or no admin client
+          setError(`Error fetching categories: ${categoriesError.message}`);
         }
       } else {
+        console.log('Categories fetch successful');
         setCategories(categoriesData || []);
       }
       

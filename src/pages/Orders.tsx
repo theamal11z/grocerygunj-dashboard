@@ -67,6 +67,7 @@ interface EnhancedOrder {
   user_id: string;
   customer: string;
   email: string | null;
+  phone_number: string | null;
   formattedDate: string;
   status: string;
   items: number;
@@ -77,6 +78,13 @@ interface EnhancedOrder {
   created_at: string;
   is_cash_on_delivery: boolean;
   delivery_fee: number;
+  delivery_address?: {
+    id: string;
+    type: string;
+    address: string;
+    area: string;
+    city: string;
+  };
   orderItems?: Array<{
     id: string;
     product_id: string | null;
@@ -102,7 +110,7 @@ const orderStatusSchema = z.object({
 });
 
 const Orders = () => {
-  const { orders, orderItems, products, profiles, refreshData, updateOrderStatus, deleteOrder } = useData();
+  const { orders, orderItems, products, profiles, addresses, refreshData, updateOrderStatus, deleteOrder } = useData();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [enhancedOrders, setEnhancedOrders] = useState<EnhancedOrder[]>([]);
   const [viewOrderDialog, setViewOrderDialog] = useState(false);
@@ -125,7 +133,7 @@ const Orders = () => {
 
   // Prepare enhanced order data
   useEffect(() => {
-    if (orders && orderItems && products && profiles) {
+    if (orders && orderItems && products && profiles && addresses) {
       // Group order items by order ID
       const orderItemsMap = orderItems.reduce((acc, item) => {
         if (!item.order_id) return acc;
@@ -143,6 +151,11 @@ const Orders = () => {
         
         // Find customer profile
         const customer = profiles.find(p => p.id === order.user_id);
+        
+        // Find delivery address if available
+        const deliveryAddress = addresses.find(addr => 
+          addr.id === (order as any).delivery_address_id || addr.id === (order as any).address_id
+        );
         
         // Format date from ISO string
         const formattedDate = order.created_at ? 
@@ -181,16 +194,24 @@ const Orders = () => {
           displayTotal: `np${order.total_amount.toFixed(2)}`,
           customer: customer?.full_name || `Customer ${order.user_id.substring(0, 8)}`,
           email: customer?.email || `user_${order.user_id.substring(0, 6)}@example.com`,
+          phone_number: customer?.phone_number || null,
           items: items.length,
           payment: order.is_cash_on_delivery ? "Cash on Delivery" : "Card Payment",
           products: orderProducts,
-          orderItems: enhancedOrderItems
+          orderItems: enhancedOrderItems,
+          delivery_address: deliveryAddress ? {
+            id: deliveryAddress.id,
+            type: deliveryAddress.type,
+            address: deliveryAddress.address,
+            area: deliveryAddress.area,
+            city: deliveryAddress.city
+          } : undefined
         };
       });
       
       setEnhancedOrders(enhanced);
     }
-  }, [orders, orderItems, products, profiles]);
+  }, [orders, orderItems, products, profiles, addresses]);
 
   // Filter orders by status
   const filteredOrders = statusFilter 
@@ -396,7 +417,7 @@ const Orders = () => {
     },
     {
       header: "Actions",
-      accessorKey: "actions" as const,
+      id: "actions",
       cell: (info: any) => {
         const order = info.row.original;
         return (
@@ -423,7 +444,7 @@ const Orders = () => {
         );
       }
     }
-  ];
+  ] as const;
 
   return (
     <div className="space-y-8 animate-blur-in">
@@ -572,10 +593,33 @@ const Orders = () => {
                       <p className="text-sm">{selectedOrder.email}</p>
                     </div>
                     <div>
+                      <h4 className="text-sm font-medium text-muted-foreground">Phone</h4>
+                      <p className="text-sm">{selectedOrder.phone_number || "Not provided"}</p>
+                    </div>
+                    <div>
                       <h4 className="text-sm font-medium text-muted-foreground">User ID</h4>
                       <p className="text-sm font-mono">{selectedOrder.user_id}</p>
                     </div>
                   </div>
+                </div>
+                
+                <Separator />
+                
+                <div>
+                  <h3 className="text-sm font-medium mb-2">Delivery Address</h3>
+                  {selectedOrder.delivery_address ? (
+                    <div className="grid grid-cols-1 gap-2 bg-secondary/30 p-3 rounded-md">
+                      <div className="flex items-center">
+                        <Badge variant="outline" className="mr-2">{selectedOrder.delivery_address.type}</Badge>
+                        <p className="text-sm">{selectedOrder.delivery_address.address}</p>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {selectedOrder.delivery_address.area}, {selectedOrder.delivery_address.city}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No address information available</p>
+                  )}
                 </div>
 
                 <Separator />
